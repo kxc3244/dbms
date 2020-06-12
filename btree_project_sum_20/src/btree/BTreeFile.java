@@ -379,8 +379,97 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 			KeyNotMatchException, NodeNotMatchException, InsertException
 
 	{
-		// remove the return statement and start your code.
+		// Initially create an empty Page page
+		Page page;
+		// and pin it using the pageId passed to the _insert()
+		page = pinPage(currentPageId);
+		// and then create a BTSortedPage currentpage of the page which will associate
+		// the sorted page instance with the page instance;
+		BTSortedPage currentPage = new BTSortedPage(page, headerPage.get_keyType());
+		// Also create a KeyDataEntry upEntry
+		KeyDataEntry upEntry;
+		// Check if currentpage is of type Index
+		if(currentPage.getType() == NodeType.INDEX)
+		{
+
+
+
+		}
+		// else if (currentpage.getType == NodeType.LEAF)
+
+		//
+
 		return null;
+
+		/*
+• Create a BTIndexpage currentIndexPage, a variable to store its
+pageId CurrentIndexpageId, and a variable to store the pageId of
+the new key nextPageId=currentIndexPage.getPageNoByKey(key)
+• Unpin the currentIndexPage using its pageId; recurse by using
+upEntry and passing correct parameters to _insert() then pin it
+again
+• If upEntry is null no split occurred; return null;
+• Check if the currentIndexPage has space for new entries
+currentIndexPage.available_space() >= BT.getKeyDataLength(
+upEntry.key, NodeType.INDEX)
+• If true insert the data on currentIndexPage and unpin the page as it is
+dirty
+• No space is available so create a newIndexPage; get its pageId
+
+Create a tmpkeyDataEntry and a RID delRID = new RID() , Use a for
+loop for ( tmpEntry= currentIndexPage.getFirst( delRid);
+tmpEntry!=null;tmpEntry= currentIndexPage.getFirst( delRid)) to
+transfer all the records from currentIndexPage to newIndexPage
+• Insert the records on newIndexPage
+• Delete records from currentIndexPage=deleteSortedRecord(delRid)
+• Make the split equal using other for loop to spilt the records
+equally[hint: use a if statement to undo last record]
+• Compare the key using BT.keyCompare( upEntry.key, tmpEntry.key)
+• If the value is positive the new key upEntry.key goes on the
+newIndexPage
+• Else on the currentIndexPage
+
+Unpin the currentIndexPage as it is dirty
+• Fill up the upEntry= newIndexPage.getFirst(delRid)
+• Set the left link in the newIndexPage .i.e. setPrevPage [hint: pass
+the upEntry.data]
+• Delete the first record from newIndexPage
+• Unpin the newIndexPage as it is dirty
+• Set the higher Index page in the hierarchy to point to the
+newIndexPage; ((IndexData)upEntry.data).setData(
+newIndexPageId)
+• Return upEntry
+-----------------------------------------------------------------------
+Else check if currentpage is of type Leaf
+• Create a BTLeafpage currentLeafPage, a variable to store its
+pageId CurrentLeafpageId
+• Check if the currentLeafPage has space for new entries
+currentLeafPage.available_space() >= BT.getKeyDataLength(
+upEntry.key, NodeType.LEAF)
+• If true insert the data on currentLeafPage and unpin the page as it is
+dirty
+• No space is available so create a newLeafPage; get its pageId; set
+the nextPage and prevPage pointer for newLeafpage and nextPage
+Pointer for CurrentLeafPage
+• Create a tmpkeyDataEntry and a RID delRID = new RID() , Use a for
+loop for ( tmpEntry= currentLeafPage.getFirst( delRid);
+tmpEntry!=null;tmpEntry= currentLeafPage.getFirst( delRid)) to
+transfer all the records from currentLeafPage to newLeafPage
+• Insert the records on newLeafPage
+• Delete records from currentLeafPage=deleteSortedRecord(delRid)
+
+• Make the split equal using other for loop to spilt the records
+equally [hint: use Keycompare to undo the last record]
+• Compare the key using BT.keyCompare( key, undoEntry.key)
+• If the value is positive the key goes on the newLeafPage
+• Else on the currentLeafPage
+• Unpin the currentLeafPage as it is dirty
+• Fill up the tmpEntry= newLeafPage.getFirst(delRid); upEntry=new
+KeyDataEntry(tmpEntry.key, newLeafPageId )
+• Unpin the newLeafPage as it is dirty
+• Return upEntry
+• Else throw and insertException(null, “”)
+*/
 	}
 
 
@@ -608,9 +697,7 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 				return false;
 			}
 			entry = leafPage.getCurrent(curRid);
-
 			PageId nextPage;
-
 			while(true)
 			{
 				while(entry == null)
