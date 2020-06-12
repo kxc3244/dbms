@@ -64,7 +64,7 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 
 	/**
 	 * Access method to data member.
-	 * 
+	 *
 	 * @return Return a BTreeHeaderPage object that is the header page of this
 	 *         btree file.
 	 */
@@ -162,7 +162,7 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 		headerPage = new BTreeHeaderPage(headerPageId);
 		dbname = new String(filename);
 		/*
-		 * 
+		 *
 		 * - headerPageId is the PageId of this BTreeFile's header page; -
 		 * headerPage, headerPageId valid and pinned - dbname contains a copy of
 		 * the name of the database
@@ -359,8 +359,16 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 			IteratorException, LeafDeleteException, InsertException,
 			IOException
 
-	{
-		
+	{ // key = value of search key of index, rid = record id of record being indexed
+		if (headerPage.get_rootId().pid == INVALID_PAGE)
+		{
+			BTLeafPage newRootPage = new BTLeafPage(headerPage.get_keyType());
+			PageId newRootPageId = newRootPage.getCurPage();
+			newRootPage.setNextPage(new PageId(INVALID_PAGE));
+			newRootPage.setPrevPage(new PageId(INVALID_PAGE));
+			newRootPage.insertRecord(key, rid);
+			//HFPage.insertRecord(byte[key,rid]);
+		}
 	}
 
 	private KeyDataEntry _insert(KeyClass key, RID rid, PageId currentPageId)
@@ -375,7 +383,7 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 		return null;
 	}
 
-	
+
 
 
 
@@ -441,20 +449,20 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 	/*
 	 * findRunStart. Status BTreeFile::findRunStart (const void lo_key, RID
 	 * *pstartrid)
-	 * 
+	 *
 	 * find left-most occurrence of `lo_key', going all the way left if lo_key
 	 * is null.
-	 * 
+	 *
 	 * Starting record returned in *pstartrid, on page *pppage, which is pinned.
-	 * 
+	 *
 	 * Since we allow duplicates, this must "go left" as described in the text
 	 * (for the search algorithm).
-	 * 
+	 *
 	 * @param lo_key find left-most occurrence of `lo_key', going all the way
 	 * left if lo_key is null.
-	 * 
+	 *
 	 * @param startrid it will reurn the first rid =< lo_key
-	 * 
+	 *
 	 * @return return a BTLeafPage instance which is pinned. null if no key was
 	 * found.
 	 */
@@ -568,11 +576,11 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 
 	/*
 	 * Status BTreeFile::NaiveDelete (const void *key, const RID rid)
-	 * 
+	 *
 	 * Remove specified data entry (<key, rid>) from an index.
-	 * 
+	 *
 	 * We don't do merging or redistribution, but do allow duplicates.
-	 * 
+	 *
 	 * Page containing first occurrence of key `key' is found for us by
 	 * findRunStart. We then iterate for (just a few) pages, if necesary, to
 	 * find the one containing <key,rid>, which we then delete via
@@ -583,7 +591,68 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 			throws LeafDeleteException, KeyNotMatchException, PinPageException,
 			ConstructPageException, IOException, UnpinPageException,
 			PinPageException, IndexSearchException, IteratorException {
-	// remove the return statement and start your code.
+
+			// remove the return statement and start your code.
+
+			// Create a leafPage;
+			BTLeafPage leafPage = new BTLeafPage(headerPage.get_keyType());
+			// An iterator of type RID
+			RID curRid = new RID();
+			// and a KeyDataEntry entry
+			KeyDataEntry entry;
+			// Use the function findRunStart(KeyClass, RID) to find the first page and rid of keys
+			leafPage = findRunStart(key, curRid);
+			// If leafpage is null, return false
+			if (leafPage == null)
+			{
+				return false;
+			}
+			entry = leafPage.getCurrent(curRid);
+
+			PageId nextPage;
+
+			while(true)
+			{
+				while(entry == null)
+				{
+					// Have to go right
+					nextPage = leafPage.getNextPage();
+					// Unpin the previousPage
+					unpinPage(leafPage.getPrevPage());
+					if(nextPage.pid == INVALID_PAGE)
+					{
+						return false;
+					}
+					// Initialize the leafPage to nextPage along with pinning the nextPage
+					// BTLeafPage(Page page, int keyType)
+					leafPage = new BTLeafPage(pinPage(nextPage), headerPage.get_keyType());
+					// Initilize entry by get the first RID of the leafPage
+					entry = leafPage.getFirst(curRid);
+				}
+
+				// Using KeyCompare check the key and entry.key; if positive value, break
+				if(BT.keyCompare(key, entry.key) > 0)
+				{
+					break;
+				}
+				if(leafPage.delEntry(new KeyDataEntry(key, rid)) == true)
+				{
+					// the key is successfully found and is delete
+					// Unpin the leafPage as it is dirty
+					unpinPage(leafPage.getCurPage());  // ????????????????????????????????
+				}
+				// Go right
+				nextPage = leafPage.getNextPage();
+				// Unpin the leafPage using getCurPage()
+				unpinPage(leafPage.getCurPage());
+				// Initialize the leafPage to nextPage along with pinning the nextPage
+				leafPage = new BTLeafPage(pinPage(nextPage), headerPage.get_keyType());
+				// Initilize entry by get the first RID of the leafPage
+				entry = leafPage.getFirst(curRid);
+				// Unpin the leafPage using getCurPage()
+				unpinPage(leafPage.getCurPage());
+			}
+			// Return false
 			return false;
 	}
 	/**
