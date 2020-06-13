@@ -64,7 +64,7 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 
 	/**
 	 * Access method to data member.
-	 * 
+	 *
 	 * @return Return a BTreeHeaderPage object that is the header page of this
 	 *         btree file.
 	 */
@@ -162,7 +162,7 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 		headerPage = new BTreeHeaderPage(headerPageId);
 		dbname = new String(filename);
 		/*
-		 * 
+		 *
 		 * - headerPageId is the PageId of this BTreeFile's header page; -
 		 * headerPage, headerPageId valid and pinned - dbname contains a copy of
 		 * the name of the database
@@ -360,7 +360,36 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 			IOException
 
 	{
-		
+		if(headerPage.get_rootId().pid == INVALID_PAGE)
+		{
+			BTLeafPage newRootPage = new BTLeafPage(headerPage.get_keyType());
+			PageId newRootPageId = newRootPage.getCurPage();
+			pinPage(newRootPageId);
+			newRootPage.setNextPage(new PageId(INVALID_PAGE));
+			newRootPage.setPrevPage(new PageId(INVALID_PAGE));
+			newRootPage.insertRecord(key,rid);
+			unpinPage(newRootPageId);
+			updateHeader(newRootPageId);
+		}
+		else
+		{
+			KeyDataEntry newRootEntry = _insert(key,rid,headerPage.get_rootId());
+			if(newRootEntry!=null)
+			{
+				BTIndexPage newIndexPage = new BTIndexPage(headerPage.get_keyType());
+				PageId newIndexPageId = newIndexPage.getCurPage();
+				pinPage(newIndexPageId);
+				newIndexPage.insertRecord(key, newIndexPageId);
+			// 	 newRootPage.insertKey( newRootEntry.key,
+		 // ((IndexData)newRootEntry.data).getData());
+				newIndexPage.setPrevPage(headerPage.get_rootId());
+				unpinPage(newIndexPageId);
+				updateHeader(newIndexPageId);
+
+			}
+
+		}
+
 	}
 
 	private KeyDataEntry _insert(KeyClass key, RID rid, PageId currentPageId)
@@ -375,7 +404,7 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 		return null;
 	}
 
-	
+
 
 
 
@@ -441,20 +470,20 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 	/*
 	 * findRunStart. Status BTreeFile::findRunStart (const void lo_key, RID
 	 * *pstartrid)
-	 * 
+	 *
 	 * find left-most occurrence of `lo_key', going all the way left if lo_key
 	 * is null.
-	 * 
+	 *
 	 * Starting record returned in *pstartrid, on page *pppage, which is pinned.
-	 * 
+	 *
 	 * Since we allow duplicates, this must "go left" as described in the text
 	 * (for the search algorithm).
-	 * 
+	 *
 	 * @param lo_key find left-most occurrence of `lo_key', going all the way
 	 * left if lo_key is null.
-	 * 
+	 *
 	 * @param startrid it will reurn the first rid =< lo_key
-	 * 
+	 *
 	 * @return return a BTLeafPage instance which is pinned. null if no key was
 	 * found.
 	 */
@@ -568,11 +597,11 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 
 	/*
 	 * Status BTreeFile::NaiveDelete (const void *key, const RID rid)
-	 * 
+	 *
 	 * Remove specified data entry (<key, rid>) from an index.
-	 * 
+	 *
 	 * We don't do merging or redistribution, but do allow duplicates.
-	 * 
+	 *
 	 * Page containing first occurrence of key `key' is found for us by
 	 * findRunStart. We then iterate for (just a few) pages, if necesary, to
 	 * find the one containing <key,rid>, which we then delete via
