@@ -786,26 +786,25 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 				}
 				leafPage=new BTLeafPage(pinPage(nextPage), headerPage.get_keyType());
 				entry=leafPage.getFirst(new RID());
-				if(BT.keyCompare(key, entry.key)>0)
-			  {
-					break;
-				}
-				if(leafPage.delEntry(new KeyDataEntry(key,rid))==true)
-				{
-					unpinPage(leafPage.getCurPage());
-	    		return false;
-				}
-				nextPage=leafPage.getNextPage();
-				unpinPage(leafPage.getCurPage());
-				leafPage=new BTLeafPage(pinPage(nextPage), headerPage.get_keyType());
-				entry=leafPage.getFirst(iteratorRID);
-
 			}
-
+			if(BT.keyCompare(key, entry.key)>0)
+		  {
+				break;
+			}
+			if(leafPage.delEntry(new KeyDataEntry(key,rid))==true)
+			{
+				unpinPage(leafPage.getCurPage());
+	  		return false;
+			}
+			nextPage=leafPage.getNextPage();
 			unpinPage(leafPage.getCurPage());
-	    return false;
+			leafPage=new BTLeafPage(pinPage(nextPage), headerPage.get_keyType());
+			entry=leafPage.getFirst(iteratorRID);
+
 		}
 
+		unpinPage(leafPage.getCurPage());
+		return false;
 
 	}
 	/**
