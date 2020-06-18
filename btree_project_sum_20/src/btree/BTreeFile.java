@@ -1,5 +1,4 @@
 /*
- * @(#) bt.java   98/03/24
  * Copyright (c) 1998 UW.  All Rights Reserved.
  *         Author: Xiaohu Li (xioahu@cs.wisc.edu).
  *
@@ -359,14 +358,15 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 			IteratorException, LeafDeleteException, InsertException,
 			IOException
 
-	{ // key = value of search key of index, rid = record id of record being indexed
-		if (headerPage.get_rootId().pid == INVALID_PAGE)
+	{
+		if(headerPage.get_rootId().pid == INVALID_PAGE)
 		{
 			BTLeafPage newRootPage = new BTLeafPage(headerPage.get_keyType());
 			PageId newRootPageId = newRootPage.getCurPage();
+			pinPage(newRootPageId);
 			newRootPage.setNextPage(new PageId(INVALID_PAGE));
 			newRootPage.setPrevPage(new PageId(INVALID_PAGE));
-			newRootPage.insertRecord(key, rid);
+			newRootPage.insertRecord(key,rid);
 			unpinPage(newRootPageId);
 			updateHeader(newRootPageId);
 		}
@@ -378,14 +378,17 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 				BTIndexPage newIndexPage = new BTIndexPage(headerPage.get_keyType());
 				PageId newIndexPageId = newIndexPage.getCurPage();
 				pinPage(newIndexPageId);
-			//	newIndexPage.insertRecord(key, newIndexPageId);
-			// 	 newRootPage.insertKey( newRootEntry.key,
-		 // ((IndexData)newRootEntry.data).getData());
+				//insert(key, newIndexPageId);
+		  	 newIndexPage.insertKey( newRootEntry.key,
+		     ((IndexData)newRootEntry.data).getData());
 				newIndexPage.setPrevPage(headerPage.get_rootId());
 				unpinPage(newIndexPageId);
 				updateHeader(newIndexPageId);
+
 			}
+
 		}
+
 	}
 
 	private KeyDataEntry _insert(KeyClass key, RID rid, PageId currentPageId)
@@ -396,97 +399,160 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 			KeyNotMatchException, NodeNotMatchException, InsertException
 
 	{
-		// Initially create an empty Page page
-		Page page;
-		// and pin it using the pageId passed to the _insert()
-		page = pinPage(currentPageId);
-		// and then create a BTSortedPage currentpage of the page which will associate
-		// the sorted page instance with the page instance;
+		// Initially create an empty Page
+		//Pin the page using the PageId provided
+		Page page=pinPage(currentPageId);
+		//creating a BTSortedPage currentpage of the page which will associate
+		//the sorted page instance with the page instance;
 		BTSortedPage currentPage = new BTSortedPage(page, headerPage.get_keyType());
-		// Also create a KeyDataEntry upEntry
+		//ALso create a KeyDataEntry upEntry
 		KeyDataEntry upEntry;
-		// Check if currentpage is of type Index
-		if(currentPage.getType() == NodeType.INDEX)
+		//check if currentpage is of type indexPage
+		if(currentPage.getType()==NodeType.INDEX)
 		{
+			BTIndexPage currentIndexPage = new BTIndexPage(page,
+			headerPage.get_keyType());
+			PageId currentIndexPageId = currentPageId ;
+			PageId nextPageId = currentIndexPage.getPageNoByKey(key);
+			unpinPage(currentIndexPageId);
+			upEntry = _insert(key, rid, nextPageId);
+			pinPage(currentIndexPageId);
+			if(upEntry == null)
+			{//No split occured return null
+				return null;
+			}
+			if(currentIndexPage.available_space() >= BT.getKeyDataLength(upEntry.key,NodeType.INDEX))
+			{//Entered the scope if there was enough space
+				currentIndexPage.insertKey(upEntry.key, ((IndexData)upEntry.data).getData() );
+				unpinPage(currentIndexPageId, true);
+				return null;
+			}
+			else
+			{
+				BTIndexPage newIndexPage = new BTIndexPage(headerPage.get_keyType());
+				PageId newIndexPageId = newIndexPage.getCurPage();
+				KeyDataEntry tmpKeyDataEntry;
+				RID delRid = new RID();
+				//Using a for loop to transfer all the records from currentIndexPage
+				// to new indexPage
+				for(tmpKeyDataEntry=currentIndexPage.getFirst(delRid);
+				tmpKeyDataEntry!=null; tmpKeyDataEntry = currentIndexPage.getFirst(delRid))
+				{
+					newIndexPage.insertKey(tmpKeyDataEntry.key,
+					((IndexData)tmpKeyDataEntry.data).getData());
+					currentIndexPage.deleteSortedRecord(delRid);
+				}
+
+				//Using another for loop to split the records equally
+				RID topRid=new RID();
+				KeyDataEntry undoEntry=null;
+				for (tmpKeyDataEntry = newIndexPage.getFirst(topRid);
+				(currentIndexPage.available_space() > newIndexPage.available_space());
+				     tmpKeyDataEntry=newIndexPage.getFirst(topRid))
+				{
+				    undoEntry=tmpKeyDataEntry;
+				    currentIndexPage.insertKey(tmpKeyDataEntry.key, ((IndexData)tmpKeyDataEntry.data).getData());
+				    newIndexPage.deleteSortedRecord(topRid);
+				}
+
+				//Using if to undo the last record as it was added by the loop
+				if (currentIndexPage.available_space() < newIndexPage.available_space())
+				{
+					RID lastRid = new RID(currentIndexPage.getCurPage(), (int)currentIndexPage.getSlotCnt()-1);
+					newIndexPage.insertKey(undoEntry.key, ((IndexData)undoEntry.data).getData());
+					currentIndexPage.deleteSortedRecord(lastRid);
+				}
+				//Checking if the key should be on currentPage or newIndexPage
+				tmpKeyDataEntry = newIndexPage.getFirst(topRid);
+				if(BT.keyCompare(upEntry.key, tmpKeyDataEntry.key)>=0)
+				{
+					newIndexPage.insertKey(upEntry.key, ((IndexData)upEntry.data).getData());
+
+				}
+				else
+				{
+					currentIndexPage.insertKey(upEntry.key, ((IndexData)upEntry.data).getData());
+				}
+				unpinPage(currentPageId);
+				upEntry = newIndexPage.getFirst(delRid);
+				newIndexPage.setPrevPage(((IndexData)upEntry.data).getData());
+				//Deleting the frist record
+				newIndexPage.deleteSortedRecord(delRid);
+				unpinPage(newIndexPageId);
+				((IndexData)upEntry.data).setData(newIndexPageId);
+				return upEntry;
+			}
 
 
 
 		}
-		// else if (currentpage.getType == NodeType.LEAF)
+		//check if currentPage is of type leafpage
+		else if(currentPage.getType() == NodeType.LEAF)
+		{
+			BTLeafPage currentLeafPage = new BTLeafPage(page, headerPage.get_keyType());
+			PageId currentLeafPageId = currentPageId;
 
-		//
+			if(currentLeafPage.available_space()>=
+         BT.getKeyDataLength(key,NodeType.LEAF))
+			{
+				currentLeafPage.insertRecord(key,rid);
+				unpinPage(currentLeafPageId);
+				return null;
+			}
 
-		return null;
+			BTLeafPage newLeafPage = new BTLeafPage(headerPage.get_keyType());
+			PageId newLeafPageId = newLeafPage.getCurPage();
+			newLeafPage.setNextPage(currentLeafPage.getNextPage());
+			newLeafPage.setPrevPage(currentLeafPageId);
+			currentLeafPage.setNextPage(newLeafPageId);
 
-		/*
-• Create a BTIndexpage currentIndexPage, a variable to store its
-pageId CurrentIndexpageId, and a variable to store the pageId of
-the new key nextPageId=currentIndexPage.getPageNoByKey(key)
-• Unpin the currentIndexPage using its pageId; recurse by using
-upEntry and passing correct parameters to _insert() then pin it
-again
-• If upEntry is null no split occurred; return null;
-• Check if the currentIndexPage has space for new entries
-currentIndexPage.available_space() >= BT.getKeyDataLength(
-upEntry.key, NodeType.INDEX)
-• If true insert the data on currentIndexPage and unpin the page as it is
-dirty
-• No space is available so create a newIndexPage; get its pageId
+			KeyDataEntry tmpKeyDataEntry;
+			RID delRID = new RID();
+			for(tmpKeyDataEntry=currentLeafPage.getFirst(delRID);
+			tmpKeyDataEntry!=null;tmpKeyDataEntry = currentLeafPage.getFirst(delRID))
+			{
+				newLeafPage.insertRecord(tmpKeyDataEntry.key,((LeafData)(tmpKeyDataEntry.data)).getData());
+				currentLeafPage.deleteSortedRecord(delRID);
+			}
 
-Create a tmpkeyDataEntry and a RID delRID = new RID() , Use a for
-loop for ( tmpEntry= currentIndexPage.getFirst( delRid);
-tmpEntry!=null;tmpEntry= currentIndexPage.getFirst( delRid)) to
-transfer all the records from currentIndexPage to newIndexPage
-• Insert the records on newIndexPage
-• Delete records from currentIndexPage=deleteSortedRecord(delRid)
-• Make the split equal using other for loop to spilt the records
-equally[hint: use a if statement to undo last record]
-• Compare the key using BT.keyCompare( upEntry.key, tmpEntry.key)
-• If the value is positive the new key upEntry.key goes on the
-newIndexPage
-• Else on the currentIndexPage
+			KeyDataEntry undoEntry=null;
+			for (tmpKeyDataEntry = newLeafPage.getFirst(delRID);
+			newLeafPage.available_space() < currentLeafPage.available_space();
+							 tmpKeyDataEntry=newLeafPage.getFirst(delRID))
+			{ //Split equal using the lopp to split the records equally
+					undoEntry = tmpKeyDataEntry;
+					currentLeafPage.insertRecord( tmpKeyDataEntry.key, ((LeafData)tmpKeyDataEntry.data).getData());
+					newLeafPage.deleteSortedRecord(delRID);
+			}
 
-Unpin the currentIndexPage as it is dirty
-• Fill up the upEntry= newIndexPage.getFirst(delRid)
-• Set the left link in the newIndexPage .i.e. setPrevPage [hint: pass
-the upEntry.data]
-• Delete the first record from newIndexPage
-• Unpin the newIndexPage as it is dirty
-• Set the higher Index page in the hierarchy to point to the
-newIndexPage; ((IndexData)upEntry.data).setData(
-newIndexPageId)
-• Return upEntry
------------------------------------------------------------------------
-Else check if currentpage is of type Leaf
-• Create a BTLeafpage currentLeafPage, a variable to store its
-pageId CurrentLeafpageId
-• Check if the currentLeafPage has space for new entries
-currentLeafPage.available_space() >= BT.getKeyDataLength(
-upEntry.key, NodeType.LEAF)
-• If true insert the data on currentLeafPage and unpin the page as it is
-dirty
-• No space is available so create a newLeafPage; get its pageId; set
-the nextPage and prevPage pointer for newLeafpage and nextPage
-Pointer for CurrentLeafPage
-• Create a tmpkeyDataEntry and a RID delRID = new RID() , Use a for
-loop for ( tmpEntry= currentLeafPage.getFirst( delRid);
-tmpEntry!=null;tmpEntry= currentLeafPage.getFirst( delRid)) to
-transfer all the records from currentLeafPage to newLeafPage
-• Insert the records on newLeafPage
-• Delete records from currentLeafPage=deleteSortedRecord(delRid)
+			if (BT.keyCompare(key, undoEntry.key ) <  0)
+			{ //Undo the last Entry
+				if ( currentLeafPage.available_space() < newLeafPage.available_space())
+				{
+					newLeafPage.insertRecord( undoEntry.key, ((LeafData)undoEntry.data).getData());
+					currentLeafPage.deleteSortedRecord(new RID(currentLeafPage.getCurPage(), (int)currentLeafPage.getSlotCnt()-1) );
+				}
+			}
+			//if positive key goes to newLeafPage
+			if(BT.keyCompare(key,undoEntry.key )>=0)
+			{
+				newLeafPage.insertRecord(key,rid);
+			}
+			else
+			{ //else on currentLeafPage
+				currentLeafPage.insertRecord(key,rid);
+			}
+			unpinPage(currentLeafPageId);
+			tmpKeyDataEntry = newLeafPage.getFirst(delRID);
+			upEntry = new KeyDataEntry(tmpKeyDataEntry.key, newLeafPageId);
+			unpinPage(newLeafPageId);
+			return upEntry;
+		}
 
-• Make the split equal using other for loop to spilt the records
-equally [hint: use Keycompare to undo the last record]
-• Compare the key using BT.keyCompare( key, undoEntry.key)
-• If the value is positive the key goes on the newLeafPage
-• Else on the currentLeafPage
-• Unpin the currentLeafPage as it is dirty
-• Fill up the tmpEntry= newLeafPage.getFirst(delRid); upEntry=new
-KeyDataEntry(tmpEntry.key, newLeafPageId )
-• Unpin the newLeafPage as it is dirty
-• Return upEntry
-• Else throw and insertException(null, “”)
-*/
+		else
+		{
+			throw new InsertException(null, "");
+		}
 	}
 
 
@@ -696,69 +762,48 @@ KeyDataEntry(tmpEntry.key, newLeafPageId )
 	private boolean NaiveDelete(KeyClass key, RID rid)
 			throws LeafDeleteException, KeyNotMatchException, PinPageException,
 			ConstructPageException, IOException, UnpinPageException,
-			PinPageException, IndexSearchException, IteratorException {
+			PinPageException, IndexSearchException, IteratorException
+	{BTLeafPage leafPage;
+		//Iterator for RID
+	    RID curRid=new RID();
+	    PageId nextPage;
+	    KeyDataEntry entry;
+	    //findRunStart finds the page with the key
+	    leafPage=findRunStart(key, curRid);
+	    if( leafPage == null)
+	    	return false;
+		//Getting the Entry from the page
+	    entry=leafPage.getCurrent(curRid);
+	    while (true) {
+	    	while (entry == null) {
+				//Iterating over pages
+	    		nextPage = leafPage.getNextPage();
+	    		unpinPage(leafPage.getCurPage());
+	    		if (nextPage.pid == INVALID_PAGE)
+	    			return false;
+				//Getting the page with the entry
+	    		leafPage=new BTLeafPage(pinPage(nextPage), headerPage.get_keyType());
+	    		entry=leafPage.getFirst(new RID());
+	    	}
+	    	if (BT.keyCompare(key, entry.key) > 0 )
+			  break;
+			//Deleting the Key
+	    	if(leafPage.delEntry(new KeyDataEntry(key, rid))==false) {
+	    		unpinPage(leafPage.getCurPage());
+	    		return false;
+	    	}
+				//Using recursion to remove all the occurences of the key.
+		   		nextPage = leafPage.getNextPage();
+		   		unpinPage(leafPage.getCurPage());
+				leafPage=new BTLeafPage(pinPage(nextPage), headerPage.get_keyType());
+				entry=leafPage.getFirst(curRid);
+				NaiveDelete(key, rid);
+	    	}
+	    unpinPage(leafPage.getCurPage());
+	    return false;}
 
-			// remove the return statement and start your code.
 
-			// Create a leafPage;
-			BTLeafPage leafPage = new BTLeafPage(headerPage.get_keyType());
-			// An iterator of type RID
-			RID curRid = new RID();
-			// and a KeyDataEntry entry
-			KeyDataEntry entry;
-			// Use the function findRunStart(KeyClass, RID) to find the first page and rid of keys
-			leafPage = findRunStart(key, curRid);
-			// If leafpage is null, return false
-			if (leafPage == null)
-			{
-				return false;
-			}
-			entry = leafPage.getCurrent(curRid);
-			PageId nextPage;
-			while(true)
-			{
-				while(entry == null)
-				{
-					// Have to go right
-					nextPage = leafPage.getNextPage();
-					// Unpin the previousPage
-					unpinPage(leafPage.getPrevPage());
-					if(nextPage.pid == INVALID_PAGE)
-					{
-						return false;
-					}
-					// Initialize the leafPage to nextPage along with pinning the nextPage
-					// BTLeafPage(Page page, int keyType)
-					leafPage = new BTLeafPage(pinPage(nextPage), headerPage.get_keyType());
-					// Initilize entry by get the first RID of the leafPage
-					entry = leafPage.getFirst(curRid);
-				}
 
-				// Using KeyCompare check the key and entry.key; if positive value, break
-				if(BT.keyCompare(key, entry.key) > 0)
-				{
-					break;
-				}
-				if(leafPage.delEntry(new KeyDataEntry(key, rid)) == true)
-				{
-					// the key is successfully found and is delete
-					// Unpin the leafPage as it is dirty
-					unpinPage(leafPage.getCurPage());  // ????????????????????????????????
-				}
-				// Go right
-				nextPage = leafPage.getNextPage();
-				// Unpin the leafPage using getCurPage()
-				unpinPage(leafPage.getCurPage());
-				// Initialize the leafPage to nextPage along with pinning the nextPage
-				leafPage = new BTLeafPage(pinPage(nextPage), headerPage.get_keyType());
-				// Initilize entry by get the first RID of the leafPage
-				entry = leafPage.getFirst(curRid);
-				// Unpin the leafPage using getCurPage()
-				unpinPage(leafPage.getCurPage());
-			}
-			// Return false
-			return false;
-	}
 	/**
 	 * create a scan with given keys Cases: (1) lo_key = null, hi_key = null
 	 * scan the whole index (2) lo_key = null, hi_key!= null range scan from min
